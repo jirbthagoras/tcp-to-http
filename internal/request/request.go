@@ -27,12 +27,14 @@ var SEPARATOR = []byte("\r\n")
 var ERR_MALFORMED_REQUEST_LINE = fmt.Errorf("malformed request line")
 var ERR_INCOMPLETE_REQUEST_LINE = fmt.Errorf("incomplete request line")
 var ERR_UNSUPPORTED_HTTP_VERSION = fmt.Errorf("unsupported http version")
+var ERR_REQUEST_IN_ERROR_STATE = fmt.Errorf("request in error state")
 
 type parserState string
 
 const (
-	StateInit parserState = "initialized"
-	StateDone parserState = "done"
+	StateInit  parserState = "initialized"
+	StateDone  parserState = "done"
+	StateError parserState = "error"
 )
 
 func parseRequestLine(b []byte) (*RequestLine, int, error) {
@@ -69,9 +71,13 @@ func (r *Request) parse(data []byte) (int, error) {
 outer:
 	for {
 		switch r.state {
+		case StateError:
+			return 0, ERR_REQUEST_IN_ERROR_STATE
+
 		case StateInit:
 			rl, n, err := parseRequestLine(data[read:])
 			if err != nil {
+				r.state = StateError
 				return 0, err
 			}
 
@@ -83,6 +89,7 @@ outer:
 			read += n
 
 			r.state = StateDone
+
 		case StateDone:
 			break outer
 		}
@@ -92,7 +99,7 @@ outer:
 }
 
 func (r *Request) done() bool {
-	return r.state == StateDone
+	return r.state == StateDone || r.state == StateError
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
