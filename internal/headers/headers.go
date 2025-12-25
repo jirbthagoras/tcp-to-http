@@ -3,27 +3,65 @@ package headers
 import (
 	"bytes"
 	"fmt"
+	"strings"
 )
 
 var crlf = []byte("\r\n")
 var separator = []byte(":")
 
-type Headers map[string]string
+type Headers struct {
+	headers map[string]string
+}
+
+func (h *Headers) Get(name string) string {
+	return h.headers[strings.ToLower(name)]
+}
+
+func (h *Headers) Set(name string, value string) {
+	h.headers[strings.ToLower(name)] = value
+}
+
+func NewHeaders() *Headers {
+	return &Headers{
+		headers: map[string]string{},
+	}
+}
+
+func isToken(str []byte) bool {
+
+	for _, ch := range str {
+		found := false
+		if ch >= 'a' && ch <= 'z' ||
+			ch >= 'A' && ch <= 'Z' ||
+			ch >= 0 && ch <= 9 {
+			found = true
+		}
+		switch ch {
+		case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+			found = true
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
 
 func parseHeader(fieldLine []byte) (string, string, error) {
-	fmt.Printf("%s\n", fieldLine)
 	parts := bytes.SplitN(fieldLine, separator, 2)
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("malformed field line")
 	}
 
-	key := parts[0]
+	name := parts[0]
 	value := bytes.TrimSpace(parts[1])
-	if bytes.HasSuffix(key, []byte(" ")) {
+	if bytes.HasSuffix(name, []byte(" ")) {
 		return "", "", fmt.Errorf("malformed field name")
 	}
 
-	return string(key), string(value), nil
+	return string(name), string(value), nil
 }
 
 // n = byte consumed
@@ -43,22 +81,22 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 		// Header kosong wak
 		if idx == 0 {
 			done = true
-			read += len(separator)
+			read += len(crlf)
 			break
 		}
 
-		key, value, err := parseHeader(data[read : read+idx])
+		name, value, err := parseHeader(data[read : read+idx])
 		if err != nil {
 			return 0, false, err
 		}
 
-		read += idx + len(separator)
-		h[key] = value
+		if !isToken([]byte(name)) {
+			return 0, false, fmt.Errorf("malformed field name")
+		}
+
+		read += idx + len(crlf)
+		h.Set(name, value)
 	}
 
 	return read, done, nil
-}
-
-func NewHeaders() Headers {
-	return make(Headers)
 }
